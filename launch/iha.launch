@@ -1,0 +1,7 @@
+<launch>
+
+
+    <node name = "sim_environment" pkg="suruiha_odev" type="cpp_pubsub" output = "screen"/>
+    <node name = "gcs" pkg="suruiha_odev" type="mission_planner.py" output = "screen"/>
+  
+</launch>

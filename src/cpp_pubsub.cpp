@@ -57,7 +57,7 @@ class Drone{
 int main(int argc, char **argv)
 {
   //init fonksiyonu
-  ros::init(argc, argv, "sim_envivorment");
+  ros::init(argc, argv, "sim_envionment");
 
   ros::NodeHandle n;
 
