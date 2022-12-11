@@ -14,6 +14,7 @@ import tools
 
 import commander as cmd
 
+# 3 tane fonksiyon drone.assgined_fp'yi güncelliyor. Bu problem. biri init, biri hungaarian biri find fp
 
 class Plan:
     def __init__(
@@ -222,7 +223,7 @@ class Plan:
         if return_list:
             return global_fp_list
     
-    def find_formation_points(self, fp_list, virtual_lead_pos=[], assignment=False):
+    def find_formation_points(self, assignment=False):
         """
         girdi olarak orta noktayı ve orta noktaya göre olan formasyon noktalarını alıp
         çıktı olarak mutlak 0'a göre olan formasyon noktalarını döner
@@ -239,19 +240,12 @@ class Plan:
         yapılmalı
         """
 
-        if self.new_formation:
-            self.fp_list = fp_list
-            self.new_formation = False
-
-        if len(virtual_lead_pos) != 0:
-            self.virtual_lead_pos = virtual_lead_pos
-
         # print('vl konumu', self.virtual_lead_pos)
         # transformları tutacak buffer
         buffer_core = tf2_ros.BufferCore(
             rospy.Duration(10.0)
         )  # 10 saniye cache süresi galiba
-
+        
         # mapten orta noktaya transformları buffera koy
         ts1 = self.transform_from_euler(
             self.virtual_lead_pos[0],
@@ -264,7 +258,7 @@ class Plan:
             "frame1",
         )
         buffer_core.set_transform(ts1, "default_authority")
-
+      
         # formasyon tanımlamayı buna benzer bir yöntem ile basitleştirebilirsin.
 
         i = 2
@@ -298,12 +292,14 @@ class Plan:
             # çekilen formasyon noktasını listeye kaydet.
             formation.append(fp_global)
             i += 1  # buna gerek olmayabilir
-
+     
         if assignment:
             i = 0
             for drone in self.drone_list:
+                print('lol')
                 drone.assigned_fp = formation[i]
                 i += 1
+               
 
         else:
             return formation
@@ -321,6 +317,8 @@ class Plan:
         dist = np.array(self.virtual_lead_pos) - np.array(self.desired_point)
         mag = np.linalg.norm(dist)
 
+
+        ##  OPTİMİZASYON GELEBİLİR, DİST = -VEL
         if mag >= self.deadband:
             #virtual lead pos update
             vel = np.array(self.desired_point) - np.array(self.virtual_lead_pos)
@@ -329,7 +327,7 @@ class Plan:
             self.virtual_lead_pos = self.virtual_lead_pos + vel * self.dt
 
             # fp atadı
-            self.find_formation_points(self.fp_list, self.virtual_lead_pos, True)
+            self.find_formation_points(True)
             return False
         else:
             return True
@@ -350,7 +348,7 @@ class Plan:
             print("vl heading", self.virtual_lead_heading)
 
             #fp noktalarını atadı
-            self.find_formation_points(self.fp_list, self.virtual_lead_pos, True)
+            self.find_formation_points(True)
             return False
     
     
@@ -420,31 +418,39 @@ class Plan:
 
             return cond
     
-    def take_off_test1(self, desired_height=1,
-                       **kwargs):
-        """
-        formasyonu ilerletmek için kullanılır
+    def change(self):
 
-        ka: hızlıca formasyon oluşturmak için normalden büyük olmalı
-        kr_d: küçük formasyonlarda dronelar birbirini it mesin diye küçük olmalı,
-        macar çalışıyor zaten
-        ka, safe_dist_d, kr_d, safe_dist_o, kr_0, kv, lock,
-        """
+        # görevi uygula
+        b = 1
 
-        if self.first_take_off:
-            self.d_h = desired_height
+        for drone in self.drone_list:
+            type = str()
+            if drone.link_uri == 0:  # if firefly
+                type = 'ff'
+            else:  # if crazyflie
+                type = 'cf'
 
-            # ilk defa çalıştırmada yapılan ayarlar (argüman paslama, parametre)
-            self.param.update(kwargs)
-          
-            # yere dizildikleri konumları formasyon olarak algılama, kontrolünü sağlama
-            self.commander.initialize_formation()
-            self.desired_point = [self.virtual_lead_pos[0], self.virtual_lead_pos[1], self.d_h]
-            
-            # flagi kapat
-            self.first_take_off = False
+            try:
+                #self.hungarian(self.global_fp_points)
+                v_a = drone.add_attractive_potential(drone.assigned_fp, self.param[f'ka_form_formation_{type}'])
+                v = np.array(v_a)
+                if np.linalg.norm(v) > 100:
+                    v = (v / np.linalg.norm(v)) * 100
+                v.tolist()
+                drone.velocity_control(v, drone.assigned_fp[2])
 
-        return self.move()
+                # görev şartlarını kontrol et.
+                a = drone._is_arrived(deadband=self.param[f'deadband_formation_{type}'])  # 0 veya 1 dönüyor
+                b = b * a
+
+            except ZeroDivisionError:
+                pass
+        
+        if b == 1: 
+            return True
+        else: 
+            return False
+
     
     def march_test1(self, desired_point,
                        **kwargs):
@@ -513,6 +519,37 @@ class Plan:
             return result
         else:
             return result
+      
+    def march_test3(self, fp_list,
+                            **kwargs):
+        """
+        ############
+        desired_point girilirse girilen noktada formasyonu oluşturur. Desired point default değeri olan boş liste
+        olarak kalırsa, İHA'ların konumlarının ortlamasını alır ve o noktada formasyon oluşturur.
+        formasyon değişimi için çağırılır
+
+        virtyal_lead_pos = [x, y, z]
+        """
+
+        #self.update_list()
+
+        #print("formasyon oluştur")
+        if self.first_form_formation:
+            self.param.update(kwargs)
+            self.commander.initialize_formation(fp_list, self.virtual_lead_pos)
+            global_fp_list = self.find_formation_points()
+            self.hungarian(global_fp_list)
+
+            self.first_form_formation = False
+        
+        result = self.change()
+        print(result)
+
+        if result:
+            self.first_form_formation = True
+            return result
+        else:  
+            return result
     
      
     def track_timeout(self, duration, **kwargs):
@@ -574,187 +611,54 @@ class Plan:
             self.land_formation_asc_first_run = False
 
             # bunları r'ye bağlı yap.
-            landing_points = [[-1, 1, 0], [1, 0, 0], [1, 1, 0], [1, 0, 0], [0, 0, 0], [-1, 0, 0], [-1, -1, 0],
-                              [0, -1, 0], [1, -1, 0]]
-            landing_points_global = self.find_formation_points(landing_points)
-            self.hungarian(landing_points_global)
+            landing_points = [[-1, 1, 0], [1, 0, 0], [1, 1, 0]]
+            self.commander.initialize_formation(landing_points) # self.fp, self.vl günceller
+            landing_points_global = self.find_formation_points() # formasyon noktalarını bulur
+            self.hungarian(landing_points_global) # eşleşirme ve atama işlemini yapar.
 
-        for drone in self.hover_list:
-            # uçuş noktalarını belirle
-            if drone.first_run_form_land:
+            for drone in self.hover_list:
+                # uçuş noktalarını belirle
+              
                 # hover için nokta belirle (cf)
                 drone.hover_pos = [drone.current_position_x, drone.current_position_y, drone.current_position_z]
                 # inen için nokta belirle
-                drone.first_run_form_land = False
-            else:
-                pass
+            
+            self.land_formation_asc_first_run = False
 
         # haraketi uygula
         try:
+                
+            print(len(self.hover_list))
+            cond = self.hover_list[0].land_single(self.param['ka_land_cf'])  # sırası gelen dronu indir
 
-            while len(self.hover_list) > 0:
-                cond = False  # iniş tamamlanmamışken
-                while not cond:
-                    print(len(self.hover_list))
-                    cond = self.hover_list[0].land_single(self.param['ka_land_cf'])  # sırası gelen dronu indir
+            # kendine denk geldiysen diğer iterasyona geç
+            for drone in self.hover_list:
+                if self.hover_list[0] == drone:
+                    continue
 
-                    # kendine denk geldiysen diğer iterasyona geç
-                    for drone in self.hover_list:
-                        if self.hover_list[0] == drone:
-                            continue
+                # sırası olmayanlara hover gönder
+                if drone.link_uri == 0:
+                    drone.position_control(drone.hover_pos[0], drone.hover_pos[1], drone.hover_pos[2], 0)
 
-                        # sırası olmayanlara hover gönder
-                        if drone.link_uri == 0:
-                            drone.position_control(drone.hover_pos[0], drone.hover_pos[1], drone.hover_pos[2], 0)
+                else:
+                    drone.send_pose(drone.hover_pos[0], drone.hover_pos[1], drone.hover_pos[2])
 
-                        else:
-                            drone.send_pose(drone.hover_pos[0], drone.hover_pos[1], drone.hover_pos[2])
-
-                # alttaki satırı silersen zıp zıp formasyon oluyo xd -isomuso -leventi bıçaklayan olcay
-                self.hover_list.remove(self.hover_list[0])
+                if cond :
+                    print('bitmez çile')
+                    # alttaki satırı silersen zıp zıp formasyon oluyo xd -isomuso -leventi bıçaklayan olcay
+                    self.hover_list.remove(self.hover_list[0])
 
 
         except ZeroDivisionError:
             pass
 
             # haraketi kontrol et
-            b = 1
             if len(self.hover_list) == 1:
                 return True
             else:  # b == 0
                 return False
 
-    def take_off_sync(self, drone_list, rate):
-        # print(self.virtual_lead_pos)
-
-        # İlk defa çalıştığında
-        average_vector = np.array([0, 0])
-        if self.take_off_sync_first_run:  # kalkışı initialize et
-
-            # ihaların orta noktasını hesapla
-
-            for drone in drone_list:
-                drone_pos_vec = np.array([drone.current_position_x, drone.current_position_y])
-                average_vector = average_vector + drone_pos_vec
-            average_vector = average_vector / len(drone_list)
-            self.virtual_lead_pos = average_vector.tolist()
-            self.virtual_lead_pos.append(0)
-
-            self.take_off_sync_first_run = False
-
-        else:
-            # take_off için böyle
-            self.virtual_lead_pos[2] += rate * self.dt  # tüm dtler self.dt'ye atanacak ve bu 1/rate olacak
-
-        # orta noktadan faydalanarak, mevcut dizilimlerini formasyon olarak tanımla
-
-        current_formation_points = []  # vl framine göre formasyon noktası vektörleri
-        for drone in drone_list:
-            drone_pos_vec = np.array([drone.current_position_x, drone.current_position_y])
-            formation_vector = drone_pos_vec - average_vector
-            formation_vector = formation_vector.tolist()
-            current_formation_points.append(formation_vector)
-
-        # transformları tutacak buffer
-        buffer_core = tf2_ros.BufferCore(
-            rospy.Duration(10.0)
-        )  # 10 saniye cache süresi galiba
-
-        # mapten orta noktaya transformları buffera koy
-        ts1 = self.transform_from_euler(
-            self.virtual_lead_pos[0],
-            self.virtual_lead_pos[1],
-            self.virtual_lead_pos[2],
-            0,
-            0,
-            0,
-            "map",
-            "frame1",
-        )
-        buffer_core.set_transform(ts1, "default_authority")
-
-        # formasyon tanımlamayı buna benzer bir yöntem ile basitleştirebilirsin.
-
-        i = 2
-        formation = []
-        for fp in current_formation_points:
-            # mapten orta noktaya transform
-            ts = self.transform_from_euler(
-                fp[0],
-                fp[1],
-                0,
-                0,
-                0,
-                0,
-                "frame1",
-                f"frame{i}",
-            )
-            # orta noktadan formasyon noktasına olan transformları buffera koy
-            buffer_core.set_transform(ts, "default_authority")
-
-            # bufferdan işlenmiş transformu çek
-            fp_transform = buffer_core.lookup_transform_core(
-                "map", f"frame{i}", rospy.Time(0))
-
-            fp_global = [
-                fp_transform.transform.translation.x,
-                fp_transform.transform.translation.y,
-                fp_transform.transform.translation.z,
-            ]
-            # buradan rotation.z çerekerek bütün İHA'ların baş açısını çekip gönderebiliriz
-
-            # çekilen formasyon noktasını listeye kaydet.
-            formation.append(fp_global)
-            i += 1  # buna gerek olmayabilir
-
-        # formasyon noktaları, iha listesindeki sıraya göre
-        # oluşturulduğu için direk veriyoruz normalde bu atama
-        # macar ile yapılmalı. mantıken macarı bir for eksik çağırman lazım
-
-        # haraketi uygulatma kısmı
-        b = 1
-
-        print(formation[0])
-        # conditiona self.virtual_lead_pos[2] < self.dh gibi bir şey atacaksın.
-        for drone, fp in zip(drone_list, formation):
-            drone.assigned_fp = fp
-
-            try:
-                type = str()
-                if drone.link_uri == 0:  # if firefly
-                    type = 'ff'
-                else:  # if crazyflie
-                    type = 'cf'
-
-                cond = abs(drone.current_position_z - self.d_h) <= self.param[f'deadband_takeoff_{type}']
-                if cond:
-                    if drone.link_uri == 0:
-                        drone.position_control(
-                            fp[0], fp[1], fp[2], 0)
-
-                    else:
-                        drone.send_pose(fp[0], fp[1], fp[2])
-
-                    a = 1
-                else:
-
-                    v_a = drone.add_attractive_potential_z(fp[2], self.param[f'ka_takeoff_{type}'])
-
-                    drone.velocity_control_z(
-                        fp[0], fp[1], v_a
-                    )
-                    a = 0
-                b = b * a
-
-
-            except ZeroDivisionError:
-                pass
-
-        if b == 1:
-            return True
-        else:  # b == 0
-            return False
-
+#---------------------------------------------------------------------------------------------
     def calculate_path2(self, desired_point):
 
         vl_pos = self.calculate_start_point(self.threatlist, desired_point,
@@ -932,6 +836,9 @@ class Plan:
         if return_list:
             return global_fp_list
 
+    #aşağıdaki macar path planning için kullanılıyor, dışliste alabilip 2 boyutlu,
+    #yukarıdakii 3 boyutlu dışarıdan liste alamıyor. bunları 1e düşür.
+    
     def hungarian2(self, formation_points, drone_list, return_list=False):
         """
         formation_points: [[x,y,z], ......] find_formation_pointsten aldığı noktaları atar
@@ -975,270 +882,6 @@ class Plan:
         if return_list:
             return global_fp_list
 
-   
-    def land1(self,
-                       **kwargs):
-        """
-        formasyonu ilerletmek için kullanılır
-
-        ka: hızlıca formasyon oluşturmak için normalden büyük olmalı
-        kr_d: küçük formasyonlarda dronelar birbirini it mesin diye küçük olmalı,
-        macar çalışıyor zaten
-        ka, safe_dist_d, kr_d, safe_dist_o, kr_0, kv, lock,
-        """
-
-        if self.land11:
-
-
-            average_vector = np.array([0, 0])
-            current_formation_points = []  # vl framine göre formasyon noktası vektörleri
-            desired_point = []
-
-            # ilk defa çalıştırmada yapılan ayarlar (argüman paslama, parametre)
-            self.param.update(kwargs)
-            # ihaların orta noktasını hesapla
-
-            for drone in self.drone_list:
-                drone_pos_vec = np.array([drone.current_position_x, drone.current_position_y])
-                average_vector = average_vector + drone_pos_vec
-            average_vector = average_vector / len(self.drone_list)
-
-            # self.virtual_lead_pos.append(0)
-
-            # yere dizildikleri konumları formasyon olarak algılama, kontrolünü sağlama
-            for drone in self.drone_list:
-                drone_pos_vec = np.array([drone.current_position_x, drone.current_position_y])
-                formation_vector = drone_pos_vec - average_vector
-                formation_vector = formation_vector.tolist()
-                formation_vector.append(self.virtual_lead_pos[2])
-                current_formation_points.append(formation_vector)
-            self.fp_list = current_formation_points
-
-            self.virtual_lead_pos[0:2] = average_vector.tolist()
-
-            self.desired_point = [average_vector[0], average_vector[1], 0]
-
-            self.land11 = False
-
-        cond = self.move_virtual_lead(self.desired_point, 0.3)
-        # print(cond)
-        # görevi uygula
-        for drone in self.drone_list:
-            type = str()
-            if drone.link_uri == 0:  # if firefly
-                type = 'ff'
-            else:  # if crazyflie
-                type = 'cf'
-
-            try:
-                v_a = drone.add_attractive_potential(drone.assigned_fp, 20)
-                v = np.array(v_a)
-                if np.linalg.norm(v) > 100:
-                    v = (v / np.linalg.norm(v)) * 100
-                v.tolist()
-                drone.velocity_control(v, drone.assigned_fp[2])
-
-            except ZeroDivisionError:
-                pass
-            if cond:
-                """try:
-                    drone.command.send_stop_setpoint()
-                except:
-                    pass"""
-                print('indim')
-
-        return cond
-
-   
-
-    def take_off_test(self, desired_height=1,
-                      **kwargs):
-        """
-        formasyonu ilerletmek için kullanılır
-
-        ka: hızlıca formasyon oluşturmak için normalden büyük olmalı
-        kr_d: küçük formasyonlarda dronelar birbirini it mesin diye küçük olmalı,
-        macar çalışıyor zaten
-        ka, safe_dist_d, kr_d, safe_dist_o, kr_0, kv, lock,
-        """
-
-        self.d_h = desired_height
-
-        average_vector = np.array([0, 0])
-        current_formation_points = []  # vl framine göre formasyon noktası vektörleri
-        desired_point = []
-
-        if self.first_take_off_test:
-            # ilk defa çalıştırmada yapılan ayarlar (argüman paslama, parametre)
-            self.param.update(kwargs)
-            # ihaların orta noktasını hesapla
-
-            for drone in self.drone_list:
-                drone_pos_vec = np.array([drone.current_position_x, drone.current_position_y])
-                average_vector = average_vector + drone_pos_vec
-            average_vector = average_vector / len(self.drone_list)
-
-            # self.virtual_lead_pos.append(0)
-
-            self.first_take_off_test = False
-
-            # yere dizildikleri konumları formasyon olarak algılama, kontrolünü sağlama
-            for drone in self.drone_list:
-                drone_pos_vec = np.array([drone.current_position_x, drone.current_position_y])
-                formation_vector = drone_pos_vec - average_vector
-                formation_vector = formation_vector.tolist()
-                formation_vector.append(self.virtual_lead_pos[2])
-                current_formation_points.append(formation_vector)
-            self.fp_list = current_formation_points
-
-            self.virtual_lead_pos[0:2] = average_vector.tolist()
-
-            desired_point = [average_vector[0], average_vector[1], self.d_h]
-
-        cond = False
-        while not cond:
-            cond = self.move_virtual_lead(desired_point, 0.3)
-            print('kalkış')
-
-            # print(cond)
-            # görevi uygula
-            for drone in self.drone_list:
-                type = str()
-                if drone.link_uri == 0:  # if firefly
-                    type = 'ff'
-                else:  # if crazyflie
-                    type = 'cf'
-
-                try:
-                    v_a = drone.add_attractive_potential(drone.assigned_fp, 30)
-                    v = np.array(v_a)
-                    if np.linalg.norm(v) > 100:
-                        v = (v / np.linalg.norm(v)) * 100
-                    v.tolist()
-                    drone.velocity_control(v, drone.assigned_fp[2])
-
-                except ZeroDivisionError:
-                    pass
-
-        self.param.update(kwargs)
-        time_start = time.time()
-        # time.sleep()
-
-        for drone in self.drone_list:
-            drone.hover_pos = [drone.current_position_x, drone.current_position_y, drone.current_position_z]
-
-        duration = 15
-        rate = rospy.Rate(10)
-        while time.time() < time_start + duration:
-            print('bekle')
-            for drone in self.drone_list:
-                if drone.link_uri == 0:  # if firefly
-                    type = 'ff'
-                else:  # if crazyflie
-                    type = 'cf'
-                v = drone.add_attractive_potential(drone.hover_pos, self.param[f'ka_hover_{type}'])
-                drone.velocity_control(v, drone.hover_pos[2])
-            rate.sleep()
-
-        return True
-
-    def move_formation_test1(self, desired_point=[10, 10, 1],
-                             **kwargs):
-        """
-        formasyonu ilerletmek için kullanılır
-
-        ka: hızlıca formasyon oluşturmak için normalden büyük olmalı
-        kr_d: küçük formasyonlarda dronelar birbirini it mesin diye küçük olmalı,
-        macar çalışıyor zaten
-        ka, safe_dist_d, kr_d, safe_dist_o, kr_0, kv, lock,
-        """
-        print("formasyon oluştur")
-
-        if self.first_form_formation:
-            # ilk defa çalıştırmada yapılan ayarlar (argüman paslama, parametre)
-            self.param.update(kwargs)
-            self.first_form_formation = False
-
-        cond = False
-        while not cond:
-            cond = self.move_virtual_lead(desired_point, 0.1)
-            # print(cond)
-            # görevi uygula
-            for drone in self.drone_list:
-                type = str()
-                if drone.link_uri == 0:  # if firefly
-                    type = 'ff'
-                else:  # if crazyflie
-                    type = 'cf'
-
-                try:
-                    v_a = drone.add_attractive_potential(drone.assigned_fp, 20)
-                    v = np.array(v_a)
-                    if np.linalg.norm(v) > 100:
-                        v = (v / np.linalg.norm(v)) * 100
-                    v.tolist()
-                    drone.velocity_control(v, drone.assigned_fp[2])
-
-                except ZeroDivisionError:
-                    pass
-
-    def move_formation_test(self, rate, desired_point=[10, 10, 1],
-                            **kwargs):
-        """
-        formasyonu ilerletmek için kullanılır
-
-        ka: hızlıca formasyon oluşturmak için normalden büyük olmalı
-        kr_d: küçük formasyonlarda dronelar birbirini it mesin diye küçük olmalı,
-        macar çalışıyor zaten
-        ka, safe_dist_d, kr_d, safe_dist_o, kr_0, kv, lock,
-        """
-        print("formasyon oluştur")
-
-        if self.first_form_formation:
-            # ilk defa çalıştırmada yapılan ayarlar (argüman paslama, parametre)
-            self.param.update(kwargs)
-            self.first_form_formation = False
-
-        cond = self.move_virtual_lead(desired_point, rate)
-        # görevi uygula
-
-        for drone in self.drone_list:
-            type = str()
-            if drone.link_uri == 0:  # if firefly
-                type = 'ff'
-            else:  # if crazyflie
-                type = 'cf'
-
-            try:
-                v_a = drone.add_attractive_potential(drone.assigned_fp, self.param[f'ka_form_formation_{type}'])
-                v = np.array(v_a)
-                if np.linalg.norm(v) > 100:
-                    v = (v / np.linalg.norm(v)) * 100
-                v.tolist()
-                drone.velocity_control(v, drone.assigned_fp[2])
-
-            except ZeroDivisionError:
-                pass
-
-        if cond:
-            return True
-        else:  # b == 0
-            return False
-
-
-    def move_drone(self, drone, desired_point):
-        "desired_point: liste: [x,y]"
-        v = drone.constant_speed(desired_point, 0.4)
-        drone.velocity_control(v, 10)
-
-        b = np.array([drone.current_position_x, drone.current_position_y]) - np.array(desired_point)
-        b = np.linalg.norm(b)
-        if b < 0.1:
-            return True
-        else:  # b == 0
-            return False
-
-
     def update_list(self):
         i = 0
         while i < len(self.drone_list):
@@ -1250,148 +893,6 @@ class Plan:
 
             else:
                 i+=1
-
-    def form_formation_test(self, fp_list, virtual_lead_pos=[],
-                            **kwargs):
-        """
-        ############
-        desired_point girilirse girilen noktada formasyonu oluşturur. Desired point default değeri olan boş liste
-        olarak kalırsa, İHA'ların konumlarının ortlamasını alır ve o noktada formasyon oluşturur.
-        formasyon değişimi için çağırılır
-
-        virtyal_lead_pos = [x, y, z]
-        """
-
-        self.update_list()
-
-        print("formasyon oluştur")
-
-        average_vector = np.array([0, 0, 0])
-
-        if self.first_form_formation:
-            if len(virtual_lead_pos) > 0:
-                self.global_fp_points = self.find_formation_points(self.fp_list, virtual_lead_pos)
-            else:
-                # ilk defa çalıştırmada yapılan ayarlar (argüman paslama, parametre)
-                self.param.update(kwargs)
-                self.fp_list = fp_list
-                # ihaların orta noktasını hesapla
-                for drone in self.drone_list:
-                    drone_pos_vec = np.array(
-                        [drone.current_position_x, drone.current_position_y, drone.current_position_z])
-                    average_vector = average_vector + drone_pos_vec
-                average_vector = average_vector / len(self.drone_list)
-                self.virtual_lead_pos = average_vector
-                self.global_fp_points = self.find_formation_points(self.fp_list, average_vector)
-
-                # self.virtual_lead_pos.append(0)
-                self.hungarian(self.global_fp_points)
-
-            self.first_form_formation = False
-
-        # görevi uygula
-        for drone in self.drone_list:
-            type = str()
-            if drone.link_uri == 0:  # if firefly
-                type = 'ff'
-            else:  # if crazyflie
-                type = 'cf'
-
-            try:
-                #self.hungarian(self.global_fp_points)
-                v_a = drone.add_attractive_potential(drone.assigned_fp, self.param[f'ka_form_formation_{type}'])
-                v = np.array(v_a)
-                if np.linalg.norm(v) > 100:
-                    v = (v / np.linalg.norm(v)) * 100
-                v.tolist()
-                drone.velocity_control(v, drone.assigned_fp[2])
-
-            except ZeroDivisionError:
-                pass
-
-        # görev şartlarını kontrol et.
-
-        b = 1
-        for drone in self.drone_list:
-            type = str()
-            if drone.link_uri == 0:  # if firefly
-                type = 'ff'
-            else:  # if crazyflie
-                type = 'cf'
-
-            a = drone._is_arrived(deadband=self.param[f'deadband_formation_{type}'])  # 0 veya 1 dönüyor
-            b = b * a
-        if b == 1:
-            return True
-        else:  # b == 0
-            return False
-
-    def form_formation_test_for3(self, fp_list, virtual_lead_pos=[],
-                                 **kwargs):
-        """
-        desired_point girilirse girilen noktada formasyonu oluşturur. Desired point default değeri olan boş liste
-        olarak kalırsa, İHA'ların konumlarının ortlamasını alır ve o noktada formasyon oluşturur.
-        formasyon değişimi için çağırılır
-
-        virtyal_lead_pos = [x, y, z]
-        """
-        print("formasyon oluştur")
-
-        average_vector = np.array([0, 0, 0])
-
-        if len(virtual_lead_pos) > 0:
-            self.global_fp_points = self.find_formation_points(self.fp_list, virtual_lead_pos)
-        else:
-            # ilk defa çalıştırmada yapılan ayarlar (argüman paslama, parametre)
-            self.param.update(kwargs)
-            self.fp_list = fp_list
-            # ihaların orta noktasını hesapla
-            for drone in self.drone_list:
-                drone_pos_vec = np.array([drone.current_position_x, drone.current_position_y, drone.current_position_z])
-                average_vector = average_vector + drone_pos_vec
-            average_vector = average_vector / len(self.drone_list)
-            self.global_fp_points = self.find_formation_points(self.fp_list, average_vector)
-
-        self.first_form_formation = False
-
-        cond = False
-        while cond:
-            # görevi uygula
-            for drone in self.drone_list:
-                type = str()
-                if drone.link_uri == 0:  # if firefly
-                    type = 'ff'
-                else:  # if crazyflie
-                    type = 'cf'
-
-                try:
-                    self.hungarian(self.global_fp_points)
-                    v_a = drone.add_attractive_potential(drone.assigned_fp, self.param[f'ka_form_formation_{type}'])
-                    v = np.array(v_a)
-                    if np.linalg.norm(v) > 100:
-                        v = (v / np.linalg.norm(v)) * 100
-                    v.tolist()
-                    drone.velocity_control(v, drone.assigned_fp[2])
-
-                except ZeroDivisionError:
-                    pass
-
-            # görev şartlarını kontrol et.
-
-            b = 1
-            for drone in self.drone_list:
-                type = str()
-                if drone.link_uri == 0:  # if firefly
-                    type = 'ff'
-                else:  # if crazyflie
-                    type = 'cf'
-
-                a = drone._is_arrived(deadband=self.param[f'deadband_formation_{type}'])  # 0 veya 1 dönüyor
-                b = b * a
-            if b == 1:
-                cond = True
-            else:  # b == 0
-                cond = False
 
     def calculate_start_point(self, threatlist, desired_point, step_size=0.1):
         # init poseu parametrize et.

@@ -37,10 +37,13 @@ d3 = lambda : mission.march_test1([mission.virtual_lead_pos[0],
                                     0])
 
 d4 = lambda: mission.march_test2(60)
+d5 = lambda: mission.land_formation_asc_test()
+d6 = lambda: mission.march_test3([[1,1,0], [2,3,1], [3,1,-0.5]])
+d7 = lambda: mission.march_test3([[1,-1,0], [2,-3,1], [1,1,0.5]])
 
 
 #m_list = [d2, d4]
-m_list = [d2, d1,d4, d3]
+m_list = [d2, d6, d7, d1, d4, d5, d2, d3]
 
 
 
@@ -57,5 +60,6 @@ if a == 1:
     time.sleep(2)
 
     while not rospy.is_shutdown() or run:
+        print(mission.virtual_lead_pos)
         run = mission.preceed(m_list)
         r.sleep()
