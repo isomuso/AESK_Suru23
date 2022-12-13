@@ -23,7 +23,8 @@ drone_list = [bn.Drone(1, link_uri=0), bn.Drone(2, link_uri=0), bn.Drone(3, link
 
 #3. görev
 mission.drone_list = drone_list
-mission.threatlist = []
+mission.threatlist = [bn.Obstacle(4,5, 0.5), bn.Obstacle(4,7, 0.5)]
+mission.fp_list = [[0.5,0.5, 1] , [0.5, 0,1 ], [0, 0.5,1 ]]
 
 
 d1 = lambda : mission.march_test1([5, 5, mission.virtual_lead_pos[2]])
@@ -36,15 +37,20 @@ d3 = lambda : mission.march_test1([mission.virtual_lead_pos[0],
                                     mission.virtual_lead_pos[1],
                                     0])
 
-d4 = lambda: mission.march_test2(60)
+d4 = lambda: mission.march_test2(500)
 d5 = lambda: mission.land_formation_asc_test()
 d6 = lambda: mission.march_test3([[1,1,0], [2,3,1], [3,1,-0.5]])
 d7 = lambda: mission.march_test3([[1,-1,0], [2,-3,1], [1,1,0.5]])
 
+k1 = lambda: mission.calculate_path2([8,8])
+k2 = lambda: mission.offline2(drone_list)
+
 
 #m_list = [d2, d4]
-m_list = [d2, d6, d7, d1, d4, d5, d2, d3]
+m_list = [d2, d6, d7, d1, d4, d5]
+m_list = [k1, k2]
 
+mission.commander.initialize_formation()
 
 
 a =1
@@ -59,7 +65,6 @@ if a == 1:
 
     time.sleep(2)
 
-    while not rospy.is_shutdown() or run:
-        print(mission.virtual_lead_pos)
+    while not rospy.is_shutdown() and run:
         run = mission.preceed(m_list)
         r.sleep()

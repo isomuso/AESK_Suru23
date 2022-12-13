@@ -223,7 +223,7 @@ class Plan:
         if return_list:
             return global_fp_list
     
-    def find_formation_points(self, assignment=False):
+    def find_formation_points(self, vl_pos=[], assignment=False):
         """
         girdi olarak orta noktayı ve orta noktaya göre olan formasyon noktalarını alıp
         çıktı olarak mutlak 0'a göre olan formasyon noktalarını döner
@@ -240,6 +240,12 @@ class Plan:
         yapılmalı
         """
 
+        if len(vl_pos) == 0:
+            vl_pos = self.virtual_lead_pos
+        else:
+            pass
+
+
         # print('vl konumu', self.virtual_lead_pos)
         # transformları tutacak buffer
         buffer_core = tf2_ros.BufferCore(
@@ -248,9 +254,9 @@ class Plan:
         
         # mapten orta noktaya transformları buffera koy
         ts1 = self.transform_from_euler(
-            self.virtual_lead_pos[0],
-            self.virtual_lead_pos[1],
-            self.virtual_lead_pos[2],
+            vl_pos[0],
+            vl_pos[1],
+            vl_pos[2],
             0,
             0,
             self.virtual_lead_heading,
@@ -296,7 +302,6 @@ class Plan:
         if assignment:
             i = 0
             for drone in self.drone_list:
-                print('lol')
                 drone.assigned_fp = formation[i]
                 i += 1
                
@@ -327,7 +332,7 @@ class Plan:
             self.virtual_lead_pos = self.virtual_lead_pos + vel * self.dt
 
             # fp atadı
-            self.find_formation_points(True)
+            self.find_formation_points(assignment = True)
             return False
         else:
             return True
@@ -348,7 +353,7 @@ class Plan:
             print("vl heading", self.virtual_lead_heading)
 
             #fp noktalarını atadı
-            self.find_formation_points(True)
+            self.find_formation_points(assignment = True)
             return False
     
     
@@ -659,14 +664,15 @@ class Plan:
                 return False
 
 #---------------------------------------------------------------------------------------------
-    def calculate_path2(self, desired_point):
+    
+    def create_2nd_mission_map(self, desired_point):
+        self.commander.initialize_formation()
 
         vl_pos = self.calculate_start_point(self.threatlist, desired_point,
                                             step_size=0.05)  # formasyon dağıtmak için noktayı döner
         print('vl_pos', vl_pos)
 
-        seperation_point = self.give_formation_points(self.fp_list,
-                                                      vl_pos)  # dağıtma noktası için formasyon noktalarını bul
+        seperation_point = self.find_formation_points(vl_pos = vl_pos)  # dağıtma noktası için formasyon noktalarını bul
 
         seperation_list = self.hungarian(seperation_point, return_list=True)
 
@@ -677,7 +683,7 @@ class Plan:
             sy.append(point[1])
 
         desired_point.append(self.d_h)
-        destination_point = self.give_formation_points(self.fp_list, desired_point
+        destination_point = self.find_formation_points(vl_pos = desired_point
                                                        )  # toplanma noktaları için
         destination_list = self.hungarian(destination_point, return_list=True)
         print('destination_list', destination_list)
@@ -685,9 +691,42 @@ class Plan:
         # MACARA LİSTE DÖNME EKLE
 
         # print(wplist)
-        vl_pos = vl_pos[0:3]
+
+
+    def create_3rd_mission_map(self):
+        pass
+    
+    
+    def calculate_path2(self, desired_point):
+
+        self.commander.initialize_formation()
+
+        vl_pos = self.calculate_start_point(self.threatlist, desired_point,
+                                            step_size=0.05)  # formasyon dağıtmak için noktayı döner
+        print('vl_pos', vl_pos)
+
+        seperation_point = self.find_formation_points(vl_pos = vl_pos)  # dağıtma noktası için formasyon noktalarını bul
+
+        seperation_list = self.hungarian(seperation_point, return_list=True)
+
+        sx = []
+        sy = []
+        for point in seperation_list:
+            sx.append(point[0])
+            sy.append(point[1])
+
+        desired_point.append(self.d_h)
+        destination_point = self.find_formation_points(vl_pos = desired_point
+                                                       )  # toplanma noktaları için
+        destination_list = self.hungarian(destination_point, return_list=True)
+        print('destination_list', destination_list)
+
+        # MACARA LİSTE DÖNME EKLE
+
+        # print(wplist)
+        #vl_pos = vl_pos[0:3]
         astar = Process(target=self.draw_path_for_drones, args=([destination_list, sx, sy]))
-        move = Process(target=self.yusuf, args=([vl_pos]))
+        move = Process(target=self.yusuf, args=([]))
         # self.draw_path_for_drones(destination_list, sx, sy)
 
         # move = Process(target=self.move_formation_test1, args=([vl_pos]))
@@ -702,96 +741,23 @@ class Plan:
         return True
 
 
-    def yusuf(self, vl_pos):
+    def yusuf(self):
         cond = False
         while not cond:
-            cond = self.take_off_formation(self.drone_list)
+            cond = self.march_test1([0,0,1]) 
         cond = False
         while not cond:
-            cond = self.form_formation([-1, 0 ,0.6], self.drone_list, 'triangle', r=0.5)
-        self.wait(2, self.drone_list)
+            cond = self.march_test3([[0.5,0.5, 1], [0.5,0, 1], [0,0.5, 1]])
+        cond = False
+        while not cond:
+            cond = self.march_test1([1,1,1])
+        self.wait(2, self.drone_list) # geri getir
 
         # self.form_formation_test_for3(self.fp_list)
         # self.move_formation_test1(vl_pos)
         # self.wait(15, self.drone_list)
 
   
-
-    def give_formation_points(self, fp_list, virtual_lead_pos):
-        """
-        girdi olarak orta noktayı ve orta noktaya göre olan formasyon noktalarını alıp
-        çıktı olarak mutlak 0'a göre olan formasyon noktalarını döner
-
-        - fplist = [[x, y, z], [x, y, z], .... ] formasyon noktalarını vl'ye göre içeren liste
-        formasyon noktalarını plannerlistte bir değişkende kaydet.
-        - vl_pos = [x, y, z] formasyonun oluşturulması istenen nokta
-        - assigment true olursa drone.fp'leri güncelliyor, olmazsa direk liste dönüyor
-        macar için kullanılabilir.
-        - virtual_lead_pos'e bir değer atanırsa o noktada formasonu oluşturur atanmazsa en son
-        vl nerede kaldıysa orada oluşturur
-
-        !!!! Yeni formasyon oluşturmak için kullanılacak olursa self.new_formation attributesi True
-        yapılmalı
-        """
-
-        if self.new_formation:
-            self.fp_list = fp_list
-            self.new_formation = False
-
-        # print('vl konumu', virtual_lead_pos)
-        # transformları tutacak buffer
-        buffer_core = tf2_ros.BufferCore(
-            rospy.Duration(10.0)
-        )  # 10 saniye cache süresi galiba
-
-        # mapten orta noktaya transformları buffera koy
-        ts1 = self.transform_from_euler(
-            virtual_lead_pos[0],
-            virtual_lead_pos[1],
-            virtual_lead_pos[2],
-            0,
-            0,
-            0,
-            "map",
-            "frame1",
-        )
-        buffer_core.set_transform(ts1, "default_authority")
-
-        # formasyon tanımlamayı buna benzer bir yöntem ile basitleştirebilirsin.
-
-        i = 2
-        formation = []
-        for fp in self.fp_list:
-            # mapten orta noktaya transform
-            ts = self.transform_from_euler(
-                fp[0],
-                fp[1],
-                fp[2],
-                0,
-                0,
-                0,
-                "frame1",
-                f"frame{i}",
-            )
-            # orta noktadan formasyon noktasına olan transformları buffera koy
-            buffer_core.set_transform(ts, "default_authority")
-
-            # bufferdan işlenmiş transformu çek
-            fp_transform = buffer_core.lookup_transform_core(
-                "map", f"frame{i}", rospy.Time(0))
-
-            fp_global = [
-                fp_transform.transform.translation.x,
-                fp_transform.transform.translation.y,
-                fp_transform.transform.translation.z,
-            ]
-            # buradan rotation.z çerekerek bütün İHA'ların baş açısını çekip gönderebiliriz
-
-            # çekilen formasyon noktasını listeye kaydet.
-            formation.append(fp_global)
-            i += 1  # buna gerek olmayabilir
-
-        return formation
 
     def hungarian(self, formation_points, return_list=False):
         """
@@ -839,49 +805,6 @@ class Plan:
     #aşağıdaki macar path planning için kullanılıyor, dışliste alabilip 2 boyutlu,
     #yukarıdakii 3 boyutlu dışarıdan liste alamıyor. bunları 1e düşür.
     
-    def hungarian2(self, formation_points, drone_list, return_list=False):
-        """
-        formation_points: [[x,y,z], ......] find_formation_pointsten aldığı noktaları atar
-        çıktı olarak drone_list içerisindeki assigned_fpleri günceller.
-
-        return_list true yapıldığı zaman, formasyon noktalarını içeren liste, dronelistteki droneların sırasına göre
-        sıralanıyor. eğer drone listesinin sırası değişirse bir sebepten ötürü istenmeyen sonuçlar olabilir.
-
-        return: [[x, y,z ], [x, y, z], ...]
-        """
-
-        cost_matrix = []
-        global_fp_list = []
-
-        for drone in drone_list:
-            for fp in formation_points:
-                drone_pos = np.array([drone.current_position_x, drone.current_position_y])
-                f_pos = np.array(fp)
-                dist_vec = drone_pos - f_pos
-                dist_mag = np.linalg.norm(dist_vec)
-                cost_matrix.append(dist_mag)
-
-        cost_matrix = np.reshape(cost_matrix, (len(drone_list), len(formation_points)))
-        ans_pos = hungarian.hungarian_algorithm(cost_matrix.copy())  # Get the element position.
-        ans, ans_mat = hungarian.ans_calculation(cost_matrix,
-                                                 ans_pos)  # Get the minimum or maximum value and corresponding matrix.
-
-        for drone in drone_list:
-            index = drone_list.index(drone)
-            ans_mat1 = ans_mat[index, :]
-            ans_mat1 = ans_mat1.tolist()
-            max_value = max(ans_mat1)
-            index = ans_mat1.index(max_value)
-
-            if return_list:
-                global_fp_list.append(formation_points[index])
-
-            else:
-                drone.assigned_fp = formation_points[index]
-
-        if return_list:
-            return global_fp_list
-
     def update_list(self):
         i = 0
         while i < len(self.drone_list):
@@ -920,6 +843,51 @@ class Plan:
         vl_init_pos.append(self.d_h)
         return vl_init_pos
 
+    #---------------------------- YOL ÇİZME KÜTÜPHANESİ ----------------------------#
+    
+    def create_map():
+        pass
+
+    def run_and_handle_astar(self, starting_point, goal_point, map, drone):
+        """
+        iki nokta arasında verilen map doğrultusunda yol çiziyor.
+        """
+
+        a_star = a.AStarPlanner(map[0], map[1], grid_size, robot_radius)
+        rx, ry = a_star.planning(sx, sy, gx, gy)
+
+        rx.reverse()
+        ry.reverse()
+
+        drone.path = [rx, ry]
+
+    
+    def draw_astar_paths(self, starting_points, goal_points, map):
+        """
+        starting_points : liste: [[x1,y1], [x2,y2], ..., [xn,yn]]
+        goal_points : liste: [[x1,y1], [x2,y2], ..., [xn,yn]]
+
+        starting_points içinde bulunan noktalar ile goal_points içerisinde bulunan noktalar arasında
+        yol çizer. starting_points'in birinci elemanını goal points'in birinci elemanına götürür. 
+
+        starting_points ile goal points uzunluğu eşit olmalı       
+        """
+
+        process_list = [None for x in range(len(starting_points))]
+
+        i = 0
+        for sp, gp in zip(starting_points, goal_points):
+            process_list[i] = Process()
+            process_list[i].start()
+            i +=1
+        
+        for j in range(len(starting_points)):
+            process_list[j].join()
+    
+    #---------------------------- YOL ÇİZME KÜTÜPHANESİ ----------------------------#
+
+        
+    
     def draw_path_for_drones(self, wplist=[], sx=[], sy=[]):
         """
         bu fonksiyon 3. görev için kullanılırsa (default olarak öyle) a* hedef noktaları
@@ -934,24 +902,19 @@ class Plan:
         print(process_list)
         i = 0
 
-        if len(wplist) == 0:
-            for drone in self.drone_list:
+       
+        for drone, wp in zip(self.drone_list, wplist):
+            if len(sx) == 0 and len(sy) == 0:
                 process_list[i] = Process(target=drone.draw_path,
-                                          args=([drone.assigned_fp[0], drone.assigned_fp[1], self.threatlist]))
+                                            args=([wp[0], wp[1], self.threatlist, 0.5, 0.9]))
                 process_list[i].start()
-                i += 1
-        else:
-            for drone, wp in zip(self.drone_list, wplist):
-                if len(sx) == 0 and len(sy) == 0:
-                    process_list[i] = Process(target=drone.draw_path,
-                                              args=([wp[0], wp[1], self.threatlist, 0.05, 0.09]))
-                    process_list[i].start()
-                else:
-                    process_list[i] = Process(target=drone.draw_path,
-                                              args=([wp[0], wp[1], self.threatlist, 0.05, 0.09, sx[i], sy[i]]))
-                    process_list[i].start()
+            else:
+                process_list[i] = Process(target=drone.draw_path,
+                                            args=([wp[0], wp[1], self.threatlist, 0.5, 0.9, sx[i], sy[i]]))
+                process_list[i].start()
 
-                i += 1
+            i += 1
+        
 
         for i in range(len(self.drone_list)):
             process_list[i].join()
@@ -1302,6 +1265,36 @@ class Plan:
 
         # tüm dronelar dönmediyse
         # False
+    
+
+    def wait(self, duration, drone_list, **kwargs):
+        """
+        python sleep fonksiyonunun işe yarayacağını düşünmüyorum çünkü
+        crazyflielara sürekli veri gitmeli gibi
+        """
+        self.param.update(kwargs)
+        time_start = time.time()
+        # time.sleep()
+
+        for drone in self.drone_list:
+            drone.hover_pos = [drone.current_position_x, drone.current_position_y, drone.current_position_z]
+
+        rate = rospy.Rate(10)
+        while time.time() < time_start + duration:
+            #self.update_list()
+            print(len(self.drone_list),'lütfeeeeeen')
+            for drone in self.drone_list:
+                if drone.link_uri == 0:  # if firefly
+                    type = 'ff'
+                else:  # if crazyflie
+                    type = 'cf'
+                v = drone.add_attractive_potential(drone.hover_pos, self.param[f'ka_hover_{type}'])
+                drone.velocity_control(v, drone.hover_pos[2])
+            rate.sleep()
+
+        return True
+    
+    ##########################################################################################################
 
     def schedule_gain_2(self, current_rate, max_g, min_g, max_rate, min_rate, transient_band):
         """

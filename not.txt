@@ -1,0 +1,92 @@
+sıralı iniş için hover düzeltilmeli
+görev değişimi 
+{yerde olup sonradan katılan
+havda bekleyen 
+sürüden çıkarılan
+}
+
+
+
+bütün dt olayları Drone içindeski self.dt'ye bağlansın (formasyon ilerlet, döndür, hız kontrolğ ile indir, velocity control)
+	Kod ilk çalıştığında tüm ihalara dt'nin, 1/rate olduğunu söyleyen bir for ile ayarlanıyoçuştan önce İHA'l
+
+formasyon oluştur, ilerlet, döndür >>> r, h
+
+	formasyon uçuş irtifası virtual_lead_pos[2]'ye bağlı. İlk form_formation'da alıyor, 	ardından hepsine aynısı paslanıyor
+
+	r parametresi Drone classının, self.formation_radius'a bağlı, form_formation'da ilk 	alıyor, diğer hepsinde aynısı kullanılıyor
+	
+
+- a starı önce tek drone, tek engel için deneyip parametreleri ayarla, ardından gerçek sürü ihalarla dene. Onun dışında simülasyonda büyük boyutlarda dene.
+
+
+Arayüze default kayıtlı senaryolar ekle
+
+sadece bataryalarını çekmek için fonk yaz yarına lazım
+
+2.görevde ihaların çıkarılması nasıl olacak
+
+moveda hata var
+
+----------------------------------------------------------------------------------------------------------------------------------------------------
+
+Daha senkronize davranmak için thread yapısı eklenebilir. Her bir İHA için.
+***********************************************************************************************************************************
+Gelen bilgi miktarının periyodunu daha da fazla düşürebiliriz çok daha iyi kontrol için
+***********************************************************************************************************************************
+Schedule gaine bakılabilir. Özellikle Move'da ve rotate'de hayat kurtarıcı olabilir. YARIŞMADA ROTATE ESNASINDA MACARI KAPAT!
+Kontrolcüye direk o noktaları versen ne olur?
+***********************************************************************************************************************************
+Formasyona baş açısı eklemek işimizi kolaylaştırabilir.
+***********************************************************************************************************************************
+Kolay test için gerekli tek dron fonksiyonlarının vs. yazılması (her görev için)
+***********************************************************************************************************************************
+Kara aracı ekleme, yeni ros topiclerine sub ve pub etme meselesi. Kara aracına sub olup onu sürme.
+***********************************************************************************************************************************
+Parametrizasyonun ve argümanların bir kez daha gözden geçirilmesi.
+***********************************************************************************************************************************
+Uçuştan önce İHA'ların bataryalarını kontrol eden, motor sağlığını kontrol eden, bağlantı gücünü vs. kontrol eden ve bunlardan bir 
+tane eksin varsa bile uçmayı reddedip problemin ne olduğunu söyleyen fonksiyon yazılmalı.
+***********************************************************************************************************************************
+Rate için ayarlama:
+Rate ne kadar yüksekse o kadar stabil uçuş. O yüzden bir fonksiyon içteki döngünün ne kadar sürdüğünü kontrol etsin. Eğer iç döngü
+varsayılan rateden uzun ise, buna göre önlem alınsın.
+***********************************************************************************************************************************
+2.Görev Güncellemesi:
+HErhangi bir fonksiyon çalışıyorken liste sürekli kontrol edilsin. Birisi disconnect olduğu anda (ondan konum verisi alınamadığında
+vs. (sim) ya da gerçekte direk connected diye bir variable var.) hemen listeye yerdeki İHA eklensin ve böylece görev değişimi 
+yapılmış olsun. Raporun da bu kısmının yeniden yazılması lazım.
+***********************************************************************************************************************************
+Astar optimizasyonu:
+YANGIN NOKTALARINI SIKLAŞTIRMAK GEREKİRSE : SCIPY INTERPOLASYON BAK!!!!
+Mescidte gridleri vs. optimize etmeye çalış. (Kontrol problemi olmadığı için gerçek İHA'ya gerek yok)
+YOl bulamayan duran potansiyel ile gitsin.
+Yol belirleyip bütün bu path noktalarına sürekli atama çalıştırma. (atamada genelde eşit iki liste oluyor, eşit olmayan için atama
+çalıştıramaz mıyız?)
+Potansiyel kısmının optimizasyonu
+İHA'larda saplanma tespit edilirse yeniden yol çizsin.
+Daha smooth haraket için interpolasyon eklenebilir
+************************************************************************************************************************************
+Güvenlik Fonksiyonları + Tİmeout 
+1 dronun patlaması bizi tamamen patlatmasın, görev her türlü tamamlanmalı. bunun için bir şeyler düşün, hatta test
+amaçlı döngüye dışarıdan müdahale edebilelim. Görevlere timeout ekle. HER GÖREV EKSİK İHA İLE TAMAMLANABİLİR OLMALI
+************************************************************************************************************************************
+
+İniş Problemi (Daha stabil kargo için, çok hızlı kalkınca da bir şey olmuyodu gerçi xd):
+Sabit hızlı kalkış lazım bize, kayı çok arttırınca çok hızlı kalkıyor, az koyunca da yavaş kalksada konumun kontrolü zorlaşıyo,
+o yüzden a stardaki gibi nokta takip etmeli bir kalkışın ve inişin denenmesi önemli olabilir. Orta noktaya kaldırma ve indirme 
+uygulanabilir.
+
+
+
+
+
+
+
+
+
+
+Dönerken orta nokta kayıyo gibi biraz
+
+cm_hava_x
+cm_kara_x

@@ -484,8 +484,8 @@ class Drone:
         min_x = -2.5
         min_y = -2.5
 
-        max_x = 2.5
-        max_y = 2.5
+        max_x = 12.5
+        max_y = 12.5
 
         ox = []
         oy = []
@@ -536,7 +536,7 @@ class Drone:
         rx.reverse()
         ry.reverse()
 
-        if True:  # pragma: no cover
+        """if True:  # pragma: no cover
             plt.plot(ox, oy, ".k")
             plt.plot(sx, sy, "og")
             plt.plot(gx, gy, "xb")
@@ -544,7 +544,7 @@ class Drone:
             plt.axis("equal")
             plt.plot(rx, ry, "-r")
             plt.pause(0.0001)
-            plt.show()
+            plt.show()"""
 
         for x, y in zip(rx, ry):
             point = [x, y]
