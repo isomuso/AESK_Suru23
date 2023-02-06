@@ -21,10 +21,9 @@ import numpy as np
 
 
 # import cflib.crtp  # noqa
-from cflib.crazyflie import Crazyflie
-from cflib.crazyflie.log import LogConfig
-from cflib.crazyflie.commander import Commander
-from datetime import datetime
+#from cflib.crazyflie import Crazyflie
+#from cflib.crazyflie.log import LogConfig
+#from cflib.crazyflie.commander import Commander
 from gazebo_msgs.msg import ModelState
 from gazebo_msgs.srv import SetModelState
 
@@ -792,4 +791,5 @@ class Obstacle:
     def callback(self, data):
         self.current_position_x = data.pose.x
         self.current_position_y = data.pose.y
+
 

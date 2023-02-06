@@ -1,9 +1,15 @@
 import numpy as np
 import hungarian
-
-
 import tf2_ros
 import rospy
+import hungarian
+from geometry_msgs.msg import TransformStamped
+import tf
+import math
+
+
+KA_FF = 5.0
+KA_CF = 30.0
 
 class Formation():
     def __init__(self, mission):
@@ -46,9 +52,15 @@ class Formation():
             formation_vector = drone_pos_vec - average_vector
             formation_vector = formation_vector.tolist()
             self.fp_list.append(formation_vector)
+
+        self.findFormationPoints(assignment=True)
+
+        print('Formasyon başlatıldı')
+        
+
         
     
-    def assignment(self, formation_points, return_list=False):
+    def assignment(self, formation_points=[], return_list=False):
         """
         formation_points: [[x,y,z], ......] find_formation_pointsten aldığı noktaları atar
         çıktı olarak mission.drone_list içerisindeki assigned_fpleri günceller.
@@ -59,6 +71,10 @@ class Formation():
         return: [[x, y,z ], [x, y, z], ...]
         """
         print("Atama gerçekleştiriliyor...")
+
+        if len(formation_points) == 0:
+            formation_points = self.fp_list
+
         cost_matrix = []
         global_fp_list = []
 
@@ -87,9 +103,13 @@ class Formation():
 
             else:
                 drone.assigned_fp = formation_points[index]
+        
 
         if return_list:
             return global_fp_list
+        else:
+            self.fp_list = global_fp_list #form ilerlet fp list üzerinden ilerlediği için
+
     
 
     def findFormationPoints(self, vl_pos=[], assignment=False):
@@ -112,13 +132,12 @@ class Formation():
             pass
 
 
-        # print('vl konumu', self.virtual_lead_pos)
         # transformları tutacak buffer
         buffer_core = tf2_ros.BufferCore(
             rospy.Duration(10.0)
         )  # 10 saniye cache süresi galiba
         
-        # mapten orta noktaya transformları buffera koy
+        # mapten orta noktaya transform
         ts1 = self.transform_from_euler(
             vl_pos[0],
             vl_pos[1],
@@ -131,8 +150,6 @@ class Formation():
         )
         buffer_core.set_transform(ts1, "default_authority")
       
-        # formasyon tanımlamayı buna benzer bir yöntem ile basitleştirebilirsin.
-
         i = 2
         formation = []
         for fp in self.fp_list:
@@ -162,18 +179,15 @@ class Formation():
             # buradan rotation.z çerekerek bütün İHA'ların baş açısını çekip gönderebiliriz
 
             # çekilen formasyon noktasını listeye kaydet.
-            formation.append(fp_global)
-            i += 1  # buna gerek olmayabilirist()
-            i = 0
-            for drone in self.mission.drone_list:
-                drone.assigned_fp = formation[i]
-                i += 1
 
-        if assignment:
-            i = 0
-            for drone in self.mission.drone_list:
-                drone.assigned_fp = formation[i]
-                i += 1
+            if assignment:
+                self.mission.drone_list[i-2].assigned_fp = fp_global
+            else:
+                formation.append(fp_global)
+            
+            i += 1  
+
+            
                
 
         else:
@@ -197,6 +211,27 @@ class Formation():
         self.virtual_lead_pos[2] += z_vel       * self.mission.dt
         self.virtual_lead_pos[3] += heading_vel * self.mission.dt
 
+    
+    def sendPotentialCommand(self):
+        """
+        İHA'ları eşleştirilmiş olduklara noktalara öteletmek için tek döngülük komut gönderir. 
+        Assigned fpler güncellenmezse hover atılır. Bu işlemi potansiyel alan metodu ile yapar.
+        """
+
+        # görevi uygula
+        for drone in self.mission.drone_list:
+            try:
+                if drone.link_uri == 0:  # if firefly
+                    drone.position_control(drone.assigned_fp[0], drone.assigned_fp[1], drone.assigned_fp[2], 0)
+
+                else:  # if crazyflie
+                    drone.send_pose(drone.assigned_fp[0], drone.assigned_fp[1], drone.assigned_fp[2], 0)
+
+            except ZeroDivisionError:
+                pass
+
+
+    
     def sendCommand(self):
         """
         İHA'ları eşleştirilmiş olduklara noktalara öteletmek için tek döngülük komut gönderir. 
@@ -215,3 +250,36 @@ class Formation():
             except ZeroDivisionError:
                 pass
 
+
+    def transform_from_euler(
+            self, x, y, z, roll, pitch, yaw, header_frame_id, child_frame_id
+    ):
+        """
+        Creates a new stamped transform from translation and euler-orientation
+        :param x: x translation
+        :param y: y translation
+        :param z: z translation
+        :param roll: orientation roll
+        :param pitch: orientation pitch
+        :param yaw: orientation yaw
+        :param header_frame_id: transform from this frame
+        :param child_frame_id: transform to this frame
+        :returns: transform
+        """
+        t = TransformStamped()
+        t.transform.translation.x = x
+        t.transform.translation.y = y
+        t.transform.translation.z = z
+
+        q = tf.transformations.quaternion_from_euler(
+            math.radians(roll), math.radians(pitch), math.radians(yaw)
+        )
+        t.transform.rotation.x = q[0]
+        t.transform.rotation.y = q[1]
+        t.transform.rotation.z = q[2]
+        t.transform.rotation.w = q[3]
+
+        t.header.frame_id = header_frame_id
+        t.child_frame_id = child_frame_id
+
+        return t
