@@ -17,9 +17,10 @@ plan = p.Plan(drone_list, 1/FREQUENCY)
 d1 = lambda : plan.takeOff(1, 1)
 d2 = lambda: plan.changeFormation([[1,2,1], [1,1,1], [1,3,0], [-1,2,1], [1,-1,1], [-1,-3,0]])
 d3 = lambda: plan.moveFormation(2,2,0.5)
-d4 = lambda : plan.land(1)
+d4 = lambda: plan.rotateFormation(120, 6)
+d5 = lambda : plan.land(1)
 
-m_list = [d1, d2, d3, d4]
+m_list = [d1, d2, d3, d4, d5]
 
 a =1
 

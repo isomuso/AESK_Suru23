@@ -15,10 +15,12 @@ class Plan:
 
             #görev indexi   
             self.i=0
+            self.initial_heading = float()
 
             #first run flagler
             self.takeoff_first_run = True
             self.change_formation_first_run = True
+            self.rotate_formation_first_run = True
             
     
     def _droneArrival(self):
@@ -117,7 +119,7 @@ class Plan:
         if self.change_formation_first_run:
             self.formation.fp_list = fp_list
             self.formation.findFormationPoints()
-            self.formation.assignment()
+            self.formation.assignment(assignment=True)
             self.change_formation_first_run = False
             print("formasyon değiştiriliyor...")
         
@@ -134,6 +136,8 @@ class Plan:
         """
         float: land_vel: iniş için gerekli hız
         """
+
+        print(self.formation.fp_list)
 
         target_pos_vec = [desired_x, desired_y, self.height]
 
@@ -157,14 +161,31 @@ class Plan:
             return True
 
 
-    def rotateFormation(self):
-        pass
+    def rotateFormation(self, desired_angle, angular_rate):
+        """
+        forksiyon şu anki haliyle tek yöne dönmeyi destekliyor
+        """
+
+        if self.rotate_formation_first_run:
+            #kaç derece dönebildiğini bulmak için initial headingi kaydet
+            self.initial_heading = self.formation.virtual_lead_pos[3]
+            self.rotate_formation_first_run = False
+
+
+        print(self.formation.virtual_lead_pos[3] - self.initial_heading)      
+        if (self.formation.virtual_lead_pos[3] - self.initial_heading) > desired_angle:
+            return True
+        else:
+            self.formation.updateVirtualLead(0.0, 0.0, 0.0, angular_rate)
+            self.formation.findFormationPoints(assignment=True)
+            self.formation.sendCommand()
+            return False
 
     
     def landAsynch(self):
         # yeni formasyon sitemine uygun landing
         # iniş için listeyi düzenle 
-        if self.land_formation_asc_first_run:
+        if self.land_asynch_first_run:
             self.hover_list = self.drone_list.copy()
             self.bubble_sort(self.hover_list)
             self.land_formation_asc_first_run = False

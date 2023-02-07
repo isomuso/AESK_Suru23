@@ -60,7 +60,7 @@ class Formation():
 
         
     
-    def assignment(self, formation_points=[], return_list=False):
+    def assignment(self, formation_points=[], assignment=False):
         """
         formation_points: [[x,y,z], ......] find_formation_pointsten aldığı noktaları atar
         çıktı olarak mission.drone_list içerisindeki assigned_fpleri günceller.
@@ -98,17 +98,16 @@ class Formation():
             max_value = max(ans_mat1)
             index = ans_mat1.index(max_value)
 
-            if return_list:
-                global_fp_list.append(formation_points[index])
+           
+            global_fp_list.append(formation_points[index])
 
-            else:
+            if assignment:
                 drone.assigned_fp = formation_points[index]
         
 
-        if return_list:
-            return global_fp_list
-        else:
-            self.fp_list = global_fp_list #form ilerlet fp list üzerinden ilerlediği için
+        self.fp_list = global_fp_list #form ilerlet fp list üzerinden ilerlediği için
+        return global_fp_list
+        
 
     
 
@@ -186,9 +185,6 @@ class Formation():
                 formation.append(fp_global)
             
             i += 1  
-
-            
-               
 
         else:
             return formation
